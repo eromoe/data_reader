@@ -60,7 +60,8 @@ class BaseClient(object):
                     return concat_with_cat(dfs, safe_cats)
                 else:
                     logger.warn('No cat match categories:%s, concat without categories' % (categories,))
-                    return pd.concat(dfs)
+                    return pd.concat(dfs).reset_index(drop=True)
+
 
     def read(self, path, columns=None):
         assert self.validate_path(path)
