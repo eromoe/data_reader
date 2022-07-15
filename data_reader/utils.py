@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 # Author: mithril
 # Created Date: 2022-07-15 17:16:45
-# Last Modified: 2022-07-15 17:25:05
+# Last Modified: 2022-07-15 17:28:50
 
 
 import re
@@ -41,24 +41,10 @@ import numpy as np
 import pandas as pd
 from pandas.api.types import CategoricalDtype
 
-
-def apply_parallel(dfGrouped, func):
-    from joblib import Parallel, delayed
-    from multiprocessing import cpu_count
-    
-    retLst = Parallel(n_jobs=cpu_count())(delayed(func)(group) for name, group in dfGrouped)
-    return pd.concat(retLst)
-
-
-def exclude_outliers(df, col):
-    return df[~(np.abs(df[col]-df[col].mean()) > (3*df[col].std()))]
-
-
 def concat_with_cat(objs, catcols, keep_index=False, **kwargs):
     for c in catcols:
         newcats = set(chain(*[o[c].cat.categories for o in objs]))
         for o in objs:
-            # if o[c].cat.categories.shape[0] < len(newcats):
             o[c] = o[c].astype(CategoricalDtype(newcats))
 
     df = pd.concat(objs, **kwargs)
