@@ -11,14 +11,43 @@ from datetime import datetime
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__)) ) )
-from mlbox.pandas_utils import concat_with_cat
-from toybox.path_utils import safepath
+
+from .utils import safepath, concat_with_cat
 from .log import logger
 
 try:
     FileNotFoundError
 except NameError:
     FileNotFoundError = IOError
+
+from mlbox.pandas_utils import concat_with_cat
+
+from toybox.path_utils import safepath
+def safepath(path, type):
+    '''path 转换
+    
+    >>> s = 's3://sss/ddS12\\sddd/ddd//ssS1\\\333/////333'
+    >>> re.findall(r'(?<![(\\\\)/])[(\\\\)/](?![(\\\\)/])', s)
+    ['/', '\\', '/', '\\']
+    >>> re.sub(r'(?<![(\\\\)/])[(\\\\)/](?![(\\\\)/])', os.sep, s)
+    error: bad escape (end of pattern) at position 0
+    # windows的 os.sep 是 \\， 转义了不行
+    >>> re.sub(r'(?<![(\\\\)/])[(\\\\)/](?![(\\\\)/])', re.escape(os.sep), s)
+    's3://sss\\ddS12\\sddd\\ddd//ssS1\\333'
+
+
+    目标是转换为 's3://sss/ddS12/sddd/ddd/ssS1/333'
+    '''
+
+    match_duoble_slashs =  r'(?<!:)[\\|/]{2}' # 匹配 // \\  不匹配 ://
+    match_slashs = r'(?<![\\/])[\\/](?![\\/])' # 匹配 / \  不匹配 ://
+
+    if type == 'unix':
+        sep = '/'
+    else:
+        sep = '\\\\'
+
+    return re.sub(match_slashs, sep, re.sub(match_duoble_slashs, sep, path) )
 
 
 class BaseClient(object):
