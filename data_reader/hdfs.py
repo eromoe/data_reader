@@ -4,10 +4,8 @@
 from __future__ import unicode_literals, print_function, absolute_import, division
 
 from os.path import join
-import pandas as pd
 
 from hdfs3 import HDFileSystem
-
 from .base import BaseClient
 
 

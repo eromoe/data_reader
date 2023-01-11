@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 # Author: mithril
 # Created Date: 2022-07-15 17:16:45
-# Last Modified: 2022-07-15 17:28:50
+# Last Modified: 2022-12-09 17:31:53
 
 
 import re
@@ -36,9 +36,8 @@ def safepath(path, type='win'):
 
 
 
+from .libs import pd
 from itertools import chain
-import numpy as np
-import pandas as pd
 from pandas.api.types import CategoricalDtype
 
 def concat_with_cat(objs, catcols, keep_index=False, **kwargs):
@@ -46,7 +45,7 @@ def concat_with_cat(objs, catcols, keep_index=False, **kwargs):
         newcats = set(chain(*[o[c].cat.categories for o in objs]))
         for o in objs:
             o[c] = o[c].astype(CategoricalDtype(newcats))
-
+    
     df = pd.concat(objs, **kwargs)
     
     if keep_index:

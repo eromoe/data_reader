@@ -20,6 +20,8 @@ def build_logger(name=None, level=None, filename=None):
     # logging.getLogger('asyncio').setLevel(logging.ERROR)
     if not level:
         level = logging.DEBUG if DEBUG else logging.INFO
+    else:
+        level = getattr(logging, level)
         
     logger = logging.getLogger(name or __file__)
     logger.setLevel(level)

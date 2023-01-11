@@ -9,7 +9,6 @@ from itertools import chain
 import fnmatch
 
 import s3fs
-import pandas as pd
 
 from .base import BaseClient
 

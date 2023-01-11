@@ -22,7 +22,22 @@ def ls(directory):
         yield os.path.abspath(os.path.join(directory, path))
 
 
+
+
+import zipfile
+import csv
+
 class FSClient(BaseClient):
+    
+    def has_header(self, path):
+        if path.endswith('.zip'):
+            with zipfile.ZipFile(path) as zipf:
+                inside_path = path.replace('.zip', '.csv').rsplit('/', 1)[-1]
+                with zipf.open(inside_path, "r") as f:
+                    return csv.Sniffer().has_header(f.read(2048).decode('utf-8'))
+        else:
+            with open(path, "r") as f:
+                return csv.Sniffer().has_header(f.read(2048).decode('utf-8'))
 
     def ls(self, *args, **kwargs):
         return ls(*args, **kwargs)

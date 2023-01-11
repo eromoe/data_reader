@@ -5,13 +5,15 @@ from __future__ import unicode_literals, print_function, absolute_import
 
 import sys
 import os
+import re
 from posixpath import join
 from datetime import datetime
+from pathlib import Path
+from collections import Counter
 
-import pandas as pd
-
+from .libs import pd
 from .utils import safepath, concat_with_cat
-from .log import logger
+from .log import build_logger
 
 try:
     FileNotFoundError
@@ -19,12 +21,22 @@ except NameError:
     FileNotFoundError = IOError
 
 
-
 class BaseClient(object):
-    def __init__(self, categories=None, suffix='.parquet', **kwargs):
+    
+    
+    def __init__(self, categories=None, suffix=None, colnames=None, debug=False, date_regex=None, **kwargs):
         # can't use or, need allow []
         self.categories = categories
         self.suffix = suffix
+        self.date_regex = date_regex
+        
+        # use for csv
+        self.colnames = colnames
+        
+        if debug:
+            self.logger = build_logger(level='DEBUG')
+        else:
+            self.logger = build_logger(level='INFO')
 
     def ls(self, *args, **kwargs):
         raise NotImplementedError
@@ -52,27 +64,47 @@ class BaseClient(object):
             try:
                 return concat_with_cat(dfs, categories)
             except:
-                logger.exception('Concat error with categories: %s', categories)
+                self.logger.exception('Concat error with categories: %s', categories)
                 safe_cats = [c for c in categories if c in dfs[0].columns]
 
                 if len(safe_cats)>0:
-                    logger.warn('Safe catcols:%s doesnt match categories:%s' % (safe_cats, categories))
+                    self.logger.warn('Safe catcols:%s doesnt match categories:%s' % (safe_cats, categories))
                     return concat_with_cat(dfs, safe_cats)
                 else:
-                    logger.warn('No cat match categories:%s, concat without categories' % (categories,))
+                    self.logger.warn('No cat match categories:%s, concat without categories' % (categories,))
                     return pd.concat(dfs).reset_index(drop=True)
 
+    def get_suffix(self, path):
+        assert '.' in path
+        return '.' + path.lower().rsplit('.', 1)[-1]
+        
+    def guess_suffix(self, dirpath):
+        suffixes = [self.get_suffix(p) for p in self.ls(dirpath) if Path(p).is_file()]
+        c = Counter(suffixes)
+        return c.most_common(1)[0][0]
+        
+    def has_header(self, path):
+        '''
+        only support on local filesystem
+        '''
+        raise NotImplementedError
 
-    def read(self, path, columns=None):
-        assert self.validate_path(path)
+    def read(self, path, columns=None, **kwargs):
+        if self.suffix:
+            assert self.validate_path(path)
 
-        if self.suffix == '.parquet':
-            x = pd.read_parquet(path, columns=columns)
-        elif self.suffix == '.csv':
-            x = pd.read_csv(path, header=True, columns=columns)
+        suffix = self.suffix or self.get_suffix(path)
+        if suffix == '.parquet':
+            x = pd.read_parquet(path, columns=columns, **kwargs)
+        elif suffix == '.csv' or suffix == '.zip':
+            x = pd.read_csv(path, names=self.colnames if self.colnames else None, usecols=columns, **kwargs)
+        elif suffix == '.xlsx' or suffix == 'xls':
+            x = pd.read_excel(path, columns=columns, **kwargs)
+        elif suffix == '.pkl':
+            x = pd.read_pickle(path)
 
-        if isinstance(x.index, pd.MultiIndex):
-            x = x.reset_index()
+        # if isinstance(x.index, pd.MultiIndex):
+        #     x = x.reset_index()
 
         if self.categories:
             for c in self.categories:
@@ -80,12 +112,12 @@ class BaseClient(object):
                     x[c] = x[c].astype('category')
 
         return x
-    
+        
     def read_dir(self, dirpath, columns=None, categories=None):
         dfs = list()
 
         for p in self.ls(dirpath):
-            logger.debug(dirpath)
+            self.logger.debug(dirpath)
             if self.validate_path(p):
                 dfs.append(self.read(p, columns=columns))
         
@@ -94,11 +126,18 @@ class BaseClient(object):
 
         raise FileNotFoundError('No file found under dir :%s' % dirpath)
 
+
+    def iter_read_wildcard_path(self, path, columns=None, categories=None):
+        path = safepath(path, 'unix')
+        for i in self.glob(path):
+            self.logger.debug(i)
+            yield self.read(i, columns=columns)
+
     def read_wildcard_path(self, path, columns=None, categories=None):
         path = safepath(path, 'unix')
         dfs = []
         for i in self.glob(path):
-            logger.debug(i)
+            self.logger.debug(i)
             x = self.read(i, columns=columns)
             dfs.append(x)
 
@@ -108,26 +147,26 @@ class BaseClient(object):
             raise FileNotFoundError('No file found with pattern :%s' % path)
 
         return df
-
+    
     def iter_read_paths(self, paths, columns=None, categories=None):
         for path in paths:
             try:
                 if '*' in path:
-                    print('Read wildcard path: %s' % path)
+                    self.logger.debug('Read wildcard path: %s' % path)
                     x = self.read_wildcard_path(path, columns=columns)
                 elif path.endswith('/') or path.endswith('\\'):
-                    print('Read dir: %s' % path )
+                    self.logger.debug('Read dir: %s' % path )
                     x = self.read_dir(path, columns=columns)
                     if x is None:
-                        print('No files under: %s' % path) 
+                        self.logger.debug('No files under: %s' % path) 
                         continue
                 else:
-                    print(path)
+                    self.logger.debug(path)
                     x = self.read(path, columns=columns)
 
                 yield x
             except FileNotFoundError as e:
-                print(e)
+                self.logger.debug(e)
                 continue
 
     def read_paths(self, paths, columns=None, categories=None, concat_size=None):
@@ -168,31 +207,67 @@ class BaseClient(object):
         
         return min_date, max_date
 
+    def iter_date_path(self, dirpath, start, end, date_regex=None, freq=None):
+        '''
+        read filename with date under a dirpath
+        '''
+        
+        dirpath = safepath(dirpath, 'unix')
+        
+        date_regex = date_regex or self.date_regex
+        date_pt = re.compile(date_regex)
+        start = pd.to_datetime(start)
+        end = pd.to_datetime(end)
+        
+        for p in self.ls(dirpath):
+            r = date_pt.findall(Path(p).name)
+            if len(r):
+                curdate = pd.to_datetime(r[0])
+                if curdate >=start and curdate < end:
+                    yield p
 
-    def read_dir_daterange(self, dirpath, columns=None, categories=None, start_date=None, end_date=None):
-        days = pd.date_range(start=start_date, end=end_date, freq='D').to_series().apply(lambda x: x.strftime('%Y/%m/%d')).ravel()
-        paths = [join(dirpath, "%s/*%s" % (i, self.suffix)) for i in days]
-
-        df = self.read_paths(paths, columns=columns)
+    def iread_daterange(self, dirpath, start, end, date_regex=None, freq='D', columns=None):
+        paths = (p for p in self.iter_date_path(dirpath, start, end, date_regex=date_regex))
+        dfs = self.iter_read_paths(paths, columns=columns)
+        return dfs
+      
+    def read_daterange(self, dirpath, start, end, date_regex=None, freq='D', columns=None):
+        dfs = self.iread_daterange(dirpath, start, end, date_regex=date_regex, columns=columns)
+        df = self.concat_dfs(dfs) 
         return df
 
-    def read_by_daterange(self, dirpath, columns=None, categories=None, start_date=None, end_date=None):
-        datapaths = pd.date_range(start_date, end_date, freq='D').to_series().apply(lambda x:join(dirpath, x.strftime('%Y/%m/%d')) ).ravel()
+    # def read_file_daterange(self, filename_tpl, date_fmt=None, freq='D', start_date=None, end_date=None, columns=None,):
+    #     days = pd.date_range(start=start_date, end=end_date, freq=freq).to_series().apply(lambda x: x.strftime(date_fmt)).ravel()
         
-        dfs = list() 
-        for d in datapaths:
-            logger.info('read dir :%s' % d)
-            try:
-                dfs.append(self.read_dir(d, columns=columns))
-            except Exception as e:
-                logger.warn('Error on reading %s, error:%s' % (d, e) )
+    #     paths = [join(filename_tpl % (i, self.suffix)) for i in days]
 
-        if len(dfs):
-            logger.info('concating files...')
-            r = self.concat_dfs(dfs)
-            return r
+    #     df = self.read_paths(paths, columns=columns)
+    #     return df
 
-        logger.info('No file found under daterange dir :%s' % dirpath)
+    # def read_dir_daterange(self, dirpath, columns=None, start_date=None, end_date=None):
+    #     days = pd.date_range(start=start_date, end=end_date, freq='D').to_series().apply(lambda x: x.strftime('%Y/%m/%d')).ravel()
+    #     paths = [join(dirpath, "%s/*%s" % (i, self.suffix)) for i in days]
+
+    #     df = self.read_paths(paths, columns=columns)
+    #     return df
+
+    # def read_by_daterange(self, dirpath, columns=None, start_date=None, end_date=None):
+    #     datapaths = pd.date_range(start_date, end_date, freq='D').to_series().apply(lambda x:join(dirpath, x.strftime('%Y/%m/%d')) ).ravel()
+        
+    #     dfs = list() 
+    #     for d in datapaths:
+    #         self.logger.info('read dir :%s' % d)
+    #         try:
+    #             dfs.append(self.read_dir(d, columns=columns))
+    #         except Exception as e:
+    #             self.logger.warn('Error on reading %s, error:%s' % (d, e) )
+
+    #     if len(dfs):
+    #         self.logger.info('concating files...')
+    #         r = self.concat_dfs(dfs)
+    #         return r
+
+    #     self.logger.info('No file found under daterange dir :%s' % dirpath)
 
 
 

@@ -5,8 +5,8 @@ from __future__ import unicode_literals, print_function, absolute_import
 
 from datetime import datetime
 import time
-import pandas as pd
 import numpy as np
+from .libs import pd
 
 class FusionClient(object):
     def __init__(self, mysql=None, hdfs=None, s3=None):
