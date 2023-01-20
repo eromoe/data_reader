@@ -1,4 +1,3 @@
-modin[all]
 pandas
 numpy
 s3fs

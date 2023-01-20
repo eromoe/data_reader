@@ -6,11 +6,14 @@ from __future__ import unicode_literals, print_function, absolute_import
 import sys
 import os
 import re
+from functools import partial
 from posixpath import join
 from datetime import datetime
 from pathlib import Path
 from collections import Counter
 
+
+from dateutil.parser import parse as dateutil_parse
 from .libs import pd
 from .utils import safepath, concat_with_cat
 from .log import build_logger
@@ -207,6 +210,30 @@ class BaseClient(object):
         
         return min_date, max_date
 
+    def get_date_parser(self, date_regex=None):
+        date_regex = date_regex or self.date_regex
+        if date_regex is not None:
+            date_pt = re.compile(date_regex)
+
+            def custom_date_parse(text):
+                r = date_pt.findall(text)
+                if len(r):
+                    return pd.to_datetime(r[0])
+                else:
+                    return None
+            return custom_date_parse
+        else:
+            # from .timefinder import find_time
+            # def custom_date_parse(text):
+            #     r = find_time(text)
+            #     if len(r):
+            #         return pd.to_datetime(r[0])
+            #     else:
+            #         return None
+                
+            # return custom_date_parse
+            return partial(dateutil_parse, fuzzy=True)
+
     def iter_date_path(self, dirpath, start, end, date_regex=None, freq=None):
         '''
         read filename with date under a dirpath
@@ -214,15 +241,14 @@ class BaseClient(object):
         
         dirpath = safepath(dirpath, 'unix')
         
-        date_regex = date_regex or self.date_regex
-        date_pt = re.compile(date_regex)
+        date_parse = self.get_date_parser(date_regex)
+        
         start = pd.to_datetime(start)
         end = pd.to_datetime(end)
         
         for p in self.ls(dirpath):
-            r = date_pt.findall(Path(p).name)
-            if len(r):
-                curdate = pd.to_datetime(r[0])
+            curdate = date_parse(Path(p).name)
+            if curdate is not None:
                 if curdate >=start and curdate < end:
                     yield p
 
