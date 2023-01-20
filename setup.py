@@ -5,7 +5,6 @@
 # @Last Modified time: 2016-05-09 13:56:23
 
 
-import sys
 from setuptools import setup, find_packages
 from codecs import open
 from os import path
@@ -23,20 +22,15 @@ setup(
 
     description='data_reader by Mithril ',
     long_description=long_description,
-
+    long_description_content_type="text/markdown",
     author='Mithril',
 
     classifiers=[
         'Development Status :: 1 - Beta',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.6',
-        'Programming Language :: Python :: 2.7',
-
+        "Programming Language :: Python :: 3",
         'Intended Audience :: Developers',
         'Operating System :: OS Independent',
-
         "License :: GPLv3",
-
         'Topic :: Internet :: WWW/HTTP',
         'Topic :: Software Development :: Libraries :: Tools',
         'Topic :: Software Development :: Libraries :: Python Modules',
@@ -45,7 +39,5 @@ setup(
     keywords='tools',
 
     install_requires=install_requires,
-
-    py_modules=['data_reader'],
 
 )
